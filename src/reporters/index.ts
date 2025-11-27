@@ -51,7 +51,7 @@ export function createReporter(
   return {
     start() {
       job.start();
-      app.debug(`Starting reporter with schedule: ${schedule}`);
+      app.debug(`Reporting to %s with schedule: %s`, service.url, schedule);
       app.debug(`Next report at ${job.nextDate()}`);
       app.setPluginStatus(`Next report at ${job.nextDate()}`);
     },

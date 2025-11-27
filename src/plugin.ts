@@ -4,6 +4,7 @@ import { createCollector } from "./collector.js";
 import { createReporter } from "./reporters/index.js";
 import { createSqliteSource } from "./sources/sqlite.js";
 import { getVesselInfo } from "./metadata.js";
+import { NODE_ENV } from "./constants.js";
 
 export default function createPlugin(app: ServerAPI): Plugin {
   // FIXME: types
@@ -16,7 +17,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     description: "Collect and share depth data",
 
     async start(config: Config) {
-      app.debug("Starting");
+      app.debug("Starting (NODE_ENV=%s)", NODE_ENV);
       const vessel = await getVesselInfo(app);
       const source = createSqliteSource(app);
 
