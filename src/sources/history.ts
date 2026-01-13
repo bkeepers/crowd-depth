@@ -103,10 +103,14 @@ type HistoryData = [
   string,
   /** position */
   [number | null, number | null],
-  /** depth */
-  number | null,
-  /** heading */
-  number | null,
+  (
+    /** depth */
+    number | null
+  ),
+  (
+    /** heading */
+    number | null
+  ),
 ];
 
 export interface HistorySourceOptions {
