@@ -1,6 +1,6 @@
-import type { S3Client } from "@aws-sdk/client-s3";
 import type { Readable } from "stream";
 import type { Metadata } from "../reporters/noaa.js";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 export type S3Config = {
   endpoint: string;
@@ -11,23 +11,20 @@ export type S3Config = {
 };
 
 export class S3Storage {
-  private clientPromise: Promise<S3Client>;
+  private client: S3Client;
   private bucket: string;
 
   constructor(config: S3Config) {
     this.bucket = config.bucket;
-    this.clientPromise = (async () => {
-      const { S3Client } = await import("@aws-sdk/client-s3");
-      return new S3Client({
-        region: config.region,
-        endpoint: config.endpoint,
-        forcePathStyle: true,
-        credentials: {
-          accessKeyId: config.accessKeyId,
-          secretAccessKey: config.secretAccessKey,
-        },
-      });
-    })();
+    this.client = new S3Client({
+      region: config.region,
+      endpoint: config.endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
+    });
   }
 
   /**
@@ -37,11 +34,8 @@ export class S3Storage {
    * @param data - The CSV data stream
    */
   async store(key: string, metadata: Metadata, data: Readable): Promise<void> {
-    const client = await this.clientPromise;
-    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-
     const jsonBody = Buffer.from(JSON.stringify(metadata, null, 2), "utf8");
-    await client.send(
+    await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: `${key}.json`,
@@ -52,7 +46,7 @@ export class S3Storage {
     );
 
     const csvBody = await this.toBuffer(data);
-    await client.send(
+    await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: `${key}.csv`,
@@ -76,14 +70,14 @@ export class S3Storage {
  * Create generic S3 storage from environment variables.
  * Required: S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_BUCKET
  */
-export function createS3Storage(): S3Storage | null {
+export function createS3Storage(env = process.env): S3Storage | null {
   const {
     S3_ENDPOINT,
     S3_REGION,
     S3_ACCESS_KEY_ID,
     S3_SECRET_ACCESS_KEY,
     S3_BUCKET,
-  } = process.env;
+  } = env;
 
   if (
     !S3_ENDPOINT ||
