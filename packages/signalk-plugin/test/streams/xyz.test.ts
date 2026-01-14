@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fromXyz, toXyz } from "../../src/streams/xyz";
+import { fromXyz, toXyz } from "../../src/streams/xyz.js";
 import { Readable } from "stream";
 import { text } from "stream/consumers";
 

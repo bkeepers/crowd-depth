@@ -4,14 +4,15 @@
     "module": "nodenext",
     "resolveJsonModule": true,
     "sourceMap": true,
-    "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "rootDir": "src",
-    "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["src/**/*.ts"] /* Specify files to be included in the program. */
+  "include": [],
+  "references": [
+    { "path": "packages/api" },
+    { "path": "packages/signalk-plugin" }
+  ]
 }

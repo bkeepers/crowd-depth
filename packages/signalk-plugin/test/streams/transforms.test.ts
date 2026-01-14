@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   correctForSensorPosition,
   getOffsets,
-} from "../../src/streams/transforms";
+} from "../../src/streams/transforms.js";
 import { getDistance } from "geolib";
 
 describe("getOffsets", () => {
