@@ -144,7 +144,7 @@ export function createSqliteWriter(db: Database.Database) {
   });
 }
 
-export function createDB(filename: string) {
+export function createDB(filename: string): Database.Database {
   const db = new Database(filename);
   db.pragma("journal_mode = WAL");
 

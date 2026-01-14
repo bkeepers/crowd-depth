@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ToGeoJSON } from "../../src/streams/geojson";
+import { ToGeoJSON } from "../../src/streams/geojson.js";
 import { Readable } from "stream";
 import { text } from "stream/consumers";
 

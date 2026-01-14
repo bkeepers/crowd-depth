@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { createSqliteSource } from "../../src/sources/sqlite";
+import { createSqliteSource } from "../../src/sources/sqlite.js";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { app, config } from "../helper";
+import { app } from "../helper.js";
 
 const data = [
   {
@@ -30,7 +30,7 @@ const data = [
 ];
 
 test("reading and writing to sqlite", async () => {
-  const source = createSqliteSource(app, config);
+  const source = createSqliteSource(app);
   const writer = source.createWriter!();
   await pipeline(Readable.from(data), writer);
 
@@ -46,7 +46,7 @@ test("reading and writing to sqlite", async () => {
 });
 
 test("reading with from and to", async () => {
-  const source = createSqliteSource(app, config);
+  const source = createSqliteSource(app);
   const writer = source.createWriter!();
   await pipeline(Readable.from(data), writer);
 
@@ -61,7 +61,7 @@ test("reading with from and to", async () => {
 });
 
 test("logReport", async () => {
-  const source = createSqliteSource(app, config);
+  const source = createSqliteSource(app);
   const from = new Date("2025-08-06T22:00:00.000Z");
   const to = new Date("2025-08-06T23:00:00.000Z");
 

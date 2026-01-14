@@ -1,4 +1,4 @@
-import type { Metadata } from "../reporters/noaa.js";
+import type { Metadata } from "crowd-depth";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { createReadStream } from "fs";
 import createDebug from "debug";

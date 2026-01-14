@@ -2,9 +2,9 @@ import { describe, test, expect, beforeAll } from "vitest";
 import request from "supertest";
 import express from "express";
 import nock from "nock";
-import { createApi, createIdentity, type APIOptions } from "../src/api";
-import { getMetadata } from "../src";
-import { config, vessel } from "./helper";
+import { createApi, createIdentity, type APIOptions } from "../src/api.js";
+import { getMetadata } from "crowd-depth";
+import { config, vessel } from "../../signalk-plugin/test/helper.js";
 
 // This is a real response from NOAA for a valid submission
 const SUCCESS_RESPONSE = {
