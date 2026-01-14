@@ -1,6 +1,5 @@
 {
   "buildCommand": "npm run build",
-  "devCommand": "npm run start",
   "installCommand": "npm install",
   "framework": "express",
   "outputDirectory": "packages/api/dist"

@@ -8,7 +8,7 @@
     "format": "eslint --fix && prettier --write .",
     "check": "eslint && prettier --check .",
     "prepare": "husky && npm run build",
-    "start": "vercel dev -l 3001"
+    "start": "npm run start -w crowd-depth-api"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
