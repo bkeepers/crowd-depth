@@ -91,7 +91,7 @@ export function registerWithRouter(router: IRouter, options: APIOptions = {}) {
       // Save data to a temporary file first
       const tempFile = join(
         tmpdir(),
-        `${new Date().toISOString()}-${uuid}.geojson`,
+        `${uuid}-${Date.now().toString(36)}.geojson`,
       );
 
       try {

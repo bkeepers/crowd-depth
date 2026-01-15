@@ -2,7 +2,7 @@ import { ServerAPI } from "@signalk/server-api";
 import { Config, VesselInfo } from "../src/index.js";
 
 export const vessel: VesselInfo = {
-  uuid: "1234",
+  uuid: "60ba2ee8-04ee-45e4-b723-d54ee031ea47",
   token: "test",
   mmsi: "123456789",
   name: "Test Vessel",

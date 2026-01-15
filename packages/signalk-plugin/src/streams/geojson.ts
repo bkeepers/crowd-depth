@@ -7,12 +7,18 @@ import chain from "stream-chain";
 /**
  * Converts BathymetryData objects into a GeoJSON FeatureCollection stream.
  */
-export function toGeoJSON(data: Readable, additionalProperties: object = {}) {
-  return new JsonStreamStringify({
+export function toGeoJSON(data: Readable, additionalFields: object = {}) {
+  const features = chain([data, toFeature]);
+
+  const geojson = new JsonStreamStringify({
     type: "FeatureCollection",
-    ...additionalProperties,
-    features: chain([data, toFeature]),
+    ...additionalFields,
+    features,
   });
+
+  features.on("error", (err) => geojson.destroy(err));
+
+  return geojson;
 }
 
 /** Converts a Bathymetry data point to a GeoJSON Feature */

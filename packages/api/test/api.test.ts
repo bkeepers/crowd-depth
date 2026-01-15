@@ -3,8 +3,8 @@ import request from "supertest";
 import express from "express";
 import nock from "nock";
 import { createApi, createIdentity, type APIOptions } from "../src/api.js";
-import { getMetadata } from "crowd-depth";
-import { config, vessel } from "../../signalk-plugin/test/helper.js";
+import { toUniqueID } from "crowd-depth";
+import { vessel } from "../../signalk-plugin/test/helper.js";
 
 // This is a real response from NOAA for a valid submission
 const SUCCESS_RESPONSE = {
@@ -59,13 +59,13 @@ describe("POST /geojson", () => {
   });
 
   test("rejects request with mismatched uuid", async () => {
-    const metadata = getMetadata(vessel, config);
+    const uniqueID = toUniqueID(vessel);
     const { token } = createIdentity("WRONG");
 
     await useApp()
       .post("/geojson")
       .set("Authorization", `Bearer ${token}`)
-      .field("metadataInput", JSON.stringify(metadata), {
+      .field("metadataInput", JSON.stringify({ uniqueID }), {
         filename: "test.json",
         contentType: "application/json",
       })
@@ -84,12 +84,12 @@ describe("POST /geojson", () => {
       .matchHeader("authorization", (val) => !val) // Ensure Authorization header is removed
       .reply(200, SUCCESS_RESPONSE, { "Content-Type": "application/json" });
 
-    const metadata = getMetadata(vessel, config);
+    const uniqueID = toUniqueID(vessel);
 
     await useApp()
       .post("/geojson")
       .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
-      .field("metadataInput", JSON.stringify(metadata.platform), {
+      .field("metadataInput", JSON.stringify({ uniqueID }), {
         filename: "test.json",
         contentType: "application/json",
       })
@@ -114,7 +114,7 @@ describe("POST /geojson", () => {
       S3_BUCKET: "test-bucket",
     };
 
-    const metadata = getMetadata(vessel, config);
+    const uniqueID = toUniqueID(vessel);
 
     // Mock NOAA endpoint
     const noaaScope = nock("https://example.com")
@@ -131,7 +131,7 @@ describe("POST /geojson", () => {
     await useApp({ env })
       .post("/geojson")
       .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
-      .field("metadataInput", JSON.stringify(metadata.platform), {
+      .field("metadataInput", JSON.stringify({ uniqueID }), {
         filename: "test.json",
         contentType: "application/json",
       })

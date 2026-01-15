@@ -1,13 +1,17 @@
 import { describe, test, expect } from "vitest";
+import Ajv from "ajv/dist/2020.js";
 import {
   getMetadata,
   BathymetryData,
   BATHY_URL,
   submitGeoJSON,
+  createGeoJSON,
 } from "../../src/index.js";
 import { Readable } from "stream";
+import { text } from "stream/consumers";
 import nock from "nock";
 import { config, vessel } from "../helper.js";
+import schema from "../../../../docs/CSB-schema-3_1_0-2024-04.json" with { type: "json" };
 
 nock.disableNetConnect();
 
@@ -41,31 +45,41 @@ const data: BathymetryData[] = [
 
 describe("submitGeoJSON", () => {
   test("success", async () => {
-    const scope = nock(BATHY_URL)
-      .post("/geojson", (body) => {
-        expect(body).toHaveProperty("type", "FeatureCollection");
-        expect(body).toHaveProperty("features");
-        expect(body.features).toHaveLength(data.length);
-        expect(body).toHaveProperty("crs");
-        expect(body).toHaveProperty("properties");
-        expect(body.properties).toHaveProperty("convention", "GeoJSON CSB 3.0");
-        expect(body.properties).toHaveProperty("platform");
-        expect(body.properties.platform).toHaveProperty(
-          "uniqueID",
-          "SIGNALK-1234",
-        );
-        expect(body.properties.platform).toHaveProperty(
-          "IDNumber",
-          "123456789",
-        );
-        expect(body.properties.platform).toHaveProperty("IDType", "MMSI");
-        expect(body.properties.platform).toHaveProperty("name", "Test Vessel");
-        expect(body.properties.platform).toHaveProperty("type", "Sailing");
-        return true;
-      })
-      .reply(200, SUCCESS_RESPONSE);
+    const scope = nock(BATHY_URL).post("/geojson").reply(200, SUCCESS_RESPONSE);
+    const res = await submitGeoJSON(
+      BATHY_URL,
+      config,
+      vessel,
+      Readable.from(data),
+    );
+    expect(res).toEqual(SUCCESS_RESPONSE);
+    expect(scope.isDone()).toBe(true);
+  });
 
-    await submitGeoJSON(BATHY_URL, config, vessel, Readable.from(data));
+  test("bad stream", async () => {
+    const stream = new Readable({
+      read() {
+        this.emit("error", new Error("Stream error"));
+      },
+    });
+    await expect(async () => {
+      await submitGeoJSON(BATHY_URL, config, vessel, stream);
+    }).rejects.toThrowError("Stream error");
+  });
+
+  test("unauthorized", async () => {
+    const scope = nock(BATHY_URL)
+      .post("/geojson")
+      .reply(403, {
+        formErrors: ["Forbidden"],
+        fieldErrors: {},
+        message: "Forbidden",
+        success: false,
+      });
+
+    await expect(() =>
+      submitGeoJSON(BATHY_URL, config, vessel, Readable.from(data)),
+    ).rejects.toThrowError(/POST to.*failed: 403/);
     expect(scope.isDone()).toBe(true);
   });
 });
@@ -73,11 +87,13 @@ describe("submitGeoJSON", () => {
 describe("getMetadata", () => {
   test("includes platform data", () => {
     const metadata = getMetadata(vessel, config);
-    expect(metadata.platform.uniqueID).toEqual("SIGNALK-1234");
-    expect(metadata.platform.IDNumber).toEqual("123456789");
-    expect(metadata.platform.IDType).toEqual("MMSI");
-    expect(metadata.platform.name).toEqual("Test Vessel");
-    expect(metadata.platform.type).toEqual("Sailing");
+    expect(metadata.properties.platform.uniqueID).toEqual(
+      "SIGNALK-60ba2ee8-04ee-45e4-b723-d54ee031ea47",
+    );
+    expect(metadata.properties.platform.IDNumber).toEqual("123456789");
+    expect(metadata.properties.platform.IDType).toEqual("MMSI");
+    expect(metadata.properties.platform.name).toEqual("Test Vessel");
+    expect(metadata.properties.platform.type).toEqual("Sailing");
   });
 
   test("anonymous does not include MMSI, name, etc", () => {
@@ -88,10 +104,26 @@ describe("getMetadata", () => {
         anonymous: true,
       },
     });
-    expect(metadata.platform.uniqueID).toEqual("SIGNALK-1234");
-    expect(metadata.platform.IDNumber).toBeUndefined();
-    expect(metadata.platform.IDType).toBeUndefined();
-    expect(metadata.platform.name).toBeUndefined();
-    expect(metadata.platform.type).toBeUndefined();
+    expect(metadata.properties.platform.uniqueID).toEqual(
+      "SIGNALK-60ba2ee8-04ee-45e4-b723-d54ee031ea47",
+    );
+    expect(metadata.properties.platform.IDNumber).toBeUndefined();
+    expect(metadata.properties.platform.IDType).toBeUndefined();
+    expect(metadata.properties.platform.name).toBeUndefined();
+    expect(metadata.properties.platform.type).toBeUndefined();
+  });
+});
+
+describe("createGeoJSON", () => {
+  test("validates against CSB schema", async () => {
+    const json = JSON.parse(
+      await text(createGeoJSON(config, vessel, Readable.from(data))),
+    );
+
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(schema);
+    const valid = validate(json);
+
+    expect(valid, JSON.stringify(validate.errors, null, 2)).toBe(true);
   });
 });
