@@ -1,13 +1,17 @@
 import { describe, test, expect } from "vitest";
+import Ajv from "ajv/dist/2020.js";
 import {
-  NOAAReporter,
   getMetadata,
   BathymetryData,
   BATHY_URL,
+  submitGeoJSON,
+  createGeoJSON,
 } from "../../src/index.js";
 import { Readable } from "stream";
+import { text } from "stream/consumers";
 import nock from "nock";
 import { config, vessel } from "../helper.js";
+import schema from "../../../../docs/CSB-schema-3_1_0-2024-04.json" with { type: "json" };
 
 nock.disableNetConnect();
 
@@ -18,33 +22,36 @@ const SUCCESS_RESPONSE = {
   submissionIds: ["60ba2ee8-04ee-45e4-b723-d54ee031ea47"],
 };
 
-describe("submit", () => {
-  const reporter = new NOAAReporter(BATHY_URL, config, vessel);
+const data: BathymetryData[] = [
+  {
+    longitude: -122.123,
+    latitude: 37.123,
+    depth: 10,
+    timestamp: new Date("2024-01-01T00:00:00Z"),
+  },
+  {
+    longitude: -122.124,
+    latitude: 37.124,
+    depth: 20,
+    timestamp: new Date("2024-01-01T00:01:01Z"),
+  },
+  {
+    longitude: -122.125,
+    latitude: 37.125,
+    depth: 30,
+    timestamp: new Date("2024-01-01T00:02:02Z"),
+  },
+];
 
-  const data: BathymetryData[] = [
-    {
-      longitude: -122.123,
-      latitude: 37.123,
-      depth: 10,
-      timestamp: new Date("2024-01-01T00:00:00Z"),
-    },
-    {
-      longitude: -122.124,
-      latitude: 37.124,
-      depth: 20,
-      timestamp: new Date("2024-01-01T00:01:01Z"),
-    },
-    {
-      longitude: -122.125,
-      latitude: 37.125,
-      depth: 30,
-      timestamp: new Date("2024-01-01T00:02:02Z"),
-    },
-  ];
-
+describe("submitGeoJSON", () => {
   test("success", async () => {
-    const scope = nock(BATHY_URL).post("/xyz").reply(200, SUCCESS_RESPONSE);
-    const res = await reporter.submit(Readable.from(data));
+    const scope = nock(BATHY_URL).post("/geojson").reply(200, SUCCESS_RESPONSE);
+    const res = await submitGeoJSON(
+      BATHY_URL,
+      config,
+      vessel,
+      Readable.from(data),
+    );
     expect(res).toEqual(SUCCESS_RESPONSE);
     expect(scope.isDone()).toBe(true);
   });
@@ -55,29 +62,24 @@ describe("submit", () => {
         this.emit("error", new Error("Stream error"));
       },
     });
-    await expect(reporter.submit(stream)).rejects.toThrowError("Stream error");
+    await expect(async () => {
+      await submitGeoJSON(BATHY_URL, config, vessel, stream);
+    }).rejects.toThrowError("Stream error");
   });
 
   test("unauthorized", async () => {
     const scope = nock(BATHY_URL)
-      .post("/xyz")
+      .post("/geojson")
       .reply(403, {
         formErrors: ["Forbidden"],
         fieldErrors: {},
         message: "Forbidden",
         success: false,
       });
-    await expect(reporter.submit(Readable.from(data))).rejects.toThrowError(
-      /POST to.*failed: 403/,
-    );
-    expect(scope.isDone()).toBe(true);
-  });
 
-  test("bad response", async () => {
-    const scope = nock(BATHY_URL).post("/xyz").reply(500);
-    await expect(reporter.submit(Readable.from(data))).rejects.toThrowError(
-      /POST to.*failed: 500/,
-    );
+    await expect(() =>
+      submitGeoJSON(BATHY_URL, config, vessel, Readable.from(data)),
+    ).rejects.toThrowError(/POST to.*failed: 403/);
     expect(scope.isDone()).toBe(true);
   });
 });
@@ -85,11 +87,13 @@ describe("submit", () => {
 describe("getMetadata", () => {
   test("includes platform data", () => {
     const metadata = getMetadata(vessel, config);
-    expect(metadata.platform.uniqueID).toEqual("SIGNALK-1234");
-    expect(metadata.platform.IDNumber).toEqual("123456789");
-    expect(metadata.platform.IDType).toEqual("MMSI");
-    expect(metadata.platform.name).toEqual("Test Vessel");
-    expect(metadata.platform.type).toEqual("Sailing");
+    expect(metadata.properties.platform.uniqueID).toEqual(
+      "SIGNALK-60ba2ee8-04ee-45e4-b723-d54ee031ea47",
+    );
+    expect(metadata.properties.platform.IDNumber).toEqual("123456789");
+    expect(metadata.properties.platform.IDType).toEqual("MMSI");
+    expect(metadata.properties.platform.name).toEqual("Test Vessel");
+    expect(metadata.properties.platform.type).toEqual("Sailing");
   });
 
   test("anonymous does not include MMSI, name, etc", () => {
@@ -100,10 +104,26 @@ describe("getMetadata", () => {
         anonymous: true,
       },
     });
-    expect(metadata.platform.uniqueID).toEqual("SIGNALK-1234");
-    expect(metadata.platform.IDNumber).toBeUndefined();
-    expect(metadata.platform.IDType).toBeUndefined();
-    expect(metadata.platform.name).toBeUndefined();
-    expect(metadata.platform.type).toBeUndefined();
+    expect(metadata.properties.platform.uniqueID).toEqual(
+      "SIGNALK-60ba2ee8-04ee-45e4-b723-d54ee031ea47",
+    );
+    expect(metadata.properties.platform.IDNumber).toBeUndefined();
+    expect(metadata.properties.platform.IDType).toBeUndefined();
+    expect(metadata.properties.platform.name).toBeUndefined();
+    expect(metadata.properties.platform.type).toBeUndefined();
+  });
+});
+
+describe("createGeoJSON", () => {
+  test("validates against CSB schema", async () => {
+    const json = JSON.parse(
+      await text(createGeoJSON(config, vessel, Readable.from(data))),
+    );
+
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(schema);
+    const valid = validate(json);
+
+    expect(valid, JSON.stringify(validate.errors, null, 2)).toBe(true);
   });
 });

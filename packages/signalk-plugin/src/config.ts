@@ -2,7 +2,7 @@ import { ServerAPI } from "@signalk/server-api";
 
 // Can this be inferred from the JSON schema?
 export type Config = {
-  path: string;
+  path: (typeof DepthPaths)[number];
   sounder: {
     x: number;
     y: number;
@@ -25,7 +25,11 @@ export type Config = {
   };
 };
 
-export const DepthPaths = ["belowSurface", "belowTransducer", "belowKeel"];
+export const DepthPaths = [
+  "belowSurface",
+  "belowTransducer",
+  "belowKeel",
+] as const;
 
 export function schema(app: ServerAPI) {
   return {

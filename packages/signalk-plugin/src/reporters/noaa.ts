@@ -1,11 +1,14 @@
 import StreamFormData, { type SubmitOptions } from "form-data";
-import { toXyz } from "../streams/xyz.js";
 import { text } from "stream/consumers";
 import type { VesselInfo } from "../metadata.js";
-import type { Readable } from "stream";
+import { Readable } from "stream";
 import { Config } from "../config.js";
 import pkg from "../../package.json" with { type: "json" };
-import { correctForSensorPosition, toPrecision } from "../streams/index.js";
+import {
+  correctForSensorPosition,
+  toGeoJSON,
+  toPrecision,
+} from "../streams/index.js";
 import chain from "stream-chain";
 import createDebug from "debug";
 
@@ -20,7 +23,7 @@ export type SubmissionResponse = {
 export function submitFormData(
   url: URL,
   prefix: string,
-  metadata: Metadata,
+  metadata: object,
   file: Readable,
   headers: Record<string, string> = {},
 ): Promise<SubmissionResponse> {
@@ -34,8 +37,8 @@ export function submitFormData(
     });
 
     form.append("file", file, {
-      contentType: "application/csv",
-      filename: `${prefix}.csv`,
+      contentType: "application/geo+json",
+      filename: `${prefix}.geojson`,
     });
 
     const options: SubmitOptions = {
@@ -73,98 +76,101 @@ export function submitFormData(
   });
 }
 
-export class NOAAReporter {
-  constructor(
-    public url: string,
-    public config: Config,
-    public vessel: VesselInfo,
-  ) {}
+export function createGeoJSON(
+  config: Config,
+  vessel: VesselInfo,
+  data: Readable,
+) {
+  return toGeoJSON(
+    chain([data, correctForSensorPosition(config), toPrecision()]),
+    getMetadata(vessel, config),
+  );
+}
 
-  correctors() {
-    return chain([correctForSensorPosition(this.config), toPrecision()]);
-  }
+export async function submitGeoJSON(
+  endpoint: string,
+  config: Config,
+  vessel: VesselInfo,
+  data: Readable,
+) {
+  const url = new URL("geojson", endpoint);
+  const headers = { Authorization: `Bearer ${vessel.token}` };
+  const body = createGeoJSON(config, vessel, data);
+  const uniqueID = toUniqueID(vessel);
 
-  async submit(data: Readable) {
-    const url = new URL("xyz", this.url);
-    const metadata: Metadata = getMetadata(this.vessel, this.config);
-    const { uuid } = this.vessel;
-    const prefix = `${uuid}-${new Date().toISOString()}`;
-    const file = chain([
-      data,
-      this.correctors(),
-      toXyz({ includeHeading: false }),
-    ]);
-
-    return submitFormData(url, prefix, metadata, file, {
-      Authorization: `Bearer ${this.vessel.token}`,
-    });
-  }
+  return submitFormData(url, vessel.uuid, { uniqueID }, body, headers);
 }
 
 export type Metadata = ReturnType<typeof getMetadata>;
 
 // https://www.ncei.noaa.gov/sites/g/files/anmtlf171/files/2024-04/SampleCSBFileFormats.pdf
 export function getMetadata(info: VesselInfo, config: Config) {
+  const uniqueID = toUniqueID(info);
+  const crs = "EPSG:4326";
+
   return {
     crs: {
-      horizontal: {
-        type: "EPSG",
-        value: 4326,
+      properties: {
+        name: crs,
       },
-      vertical: "Transducer",
     },
-    providerContactPoint: {
-      orgName: "Open Water Software",
-      email: "bathy@openwaters.io",
-      logger: `${pkg.name} (${pkg.homepage})`,
-      loggerVersion: pkg.version,
-    },
-    convention: "XYZ CSB 3.0",
-    dataLicense: "CC0 1.0",
-    platform: {
-      uniqueID: `SIGNALK-${info.uuid}`,
-      ...(config.sharing.anonymous
-        ? {}
-        : {
-            type: info.type,
-            name: info.name,
-            length: info.loa,
-            IDType: info.mmsi ? "MMSI" : info.imo ? "IMO" : undefined,
-            IDNumber: info.mmsi ?? info.imo,
-          }),
-      sensors: [
-        {
-          type: "Sounder",
-          make: config.sounder?.make,
-          model: config.sounder?.model,
-          position: [
-            config.sounder?.x ?? 0,
-            config.sounder?.y ?? 0,
-            config.sounder?.z ?? 0,
-          ],
-          draft: config.sounder?.draft,
-          frequency: config.sounder?.frequency,
-          transducer: config.sounder?.transducer,
-        },
-        {
-          type: "GNSS",
-          make: config.gnss?.make,
-          model: config.gnss?.model,
-          position: [
-            config.gnss?.x ?? 0,
-            config.gnss?.y ?? 0,
-            config.gnss?.z ?? 0,
-          ],
-        },
-      ],
-      correctors: {
-        positionReferencePoint: "Transducer",
-        draftApplied: true,
-        // "positionOffsetsDocumented": true,
-        // "soundSpeedDocumented": true,
-        // "dataProcessed": true,
-        // "motionOffsetsApplied": true,
+    properties: {
+      trustedNode: {
+        providerOrganizationName: "Open Water Software",
+        providerEmail: "bathy@openwaters.io",
+        uniqueVesselID: uniqueID,
+        convention: "GeoJSON CSB 3.1",
+        dataLicense: "CC0 1.0",
+        providerLogger: `${pkg.name} (${pkg.homepage})`,
+        providerLoggerVersion: pkg.version,
+        navigationCRS: crs,
+        verticalReferenceOfDepth: "Waterline",
+        vesselPositionReferencePoint: "Transducer",
+      },
+      platform: {
+        uniqueID,
+        ...(config.sharing.anonymous
+          ? {}
+          : {
+              type: info.type,
+              name: info.name,
+              length: info.loa,
+              IDType: info.mmsi ? "MMSI" : info.imo ? "IMO" : undefined,
+              IDNumber: info.mmsi ?? info.imo,
+            }),
+        sensors: [
+          {
+            type: "Sounder",
+            make: config.sounder.make ?? "Unknown",
+            model: config.sounder.model ?? "Unknown",
+            position: [
+              config.sounder.x ?? 0,
+              config.sounder.y ?? 0,
+              config.sounder.z ?? 0,
+            ],
+            draft: config.sounder.draft,
+            frequency: config.sounder.frequency,
+          },
+          {
+            type: "GNSS",
+            make: config.gnss.make ?? "Unknown",
+            model: config.gnss.model ?? "Unknown",
+            position: [
+              config.gnss.x ?? 0,
+              config.gnss.y ?? 0,
+              config.gnss.z ?? 0,
+            ],
+          },
+        ],
+        // Positions have been corrected for GNSS/sounder offsets
+        positionOffsetsDocumented: true,
+        // Data has not ben adjusted for tides, etc.
+        dataProcessed: false,
       },
     },
   };
+}
+
+export function toUniqueID(info: VesselInfo) {
+  return `SIGNALK-${info.uuid}`;
 }
