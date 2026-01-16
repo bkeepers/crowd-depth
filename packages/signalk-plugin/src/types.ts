@@ -13,6 +13,5 @@ export type BathymetryData = {
 export interface BathymetrySource {
   createWriter?: () => Writable;
   createReader: (options: Timeframe) => Readable | Promise<Readable>;
-  logReport?(timeframe: Timeframe): void;
-  lastReport?: Date;
+  getAvailableDates?(timeframe?: Partial<Timeframe>): Promise<Date[]>;
 }

@@ -30,7 +30,7 @@
     "test": "vitest"
   },
   "devDependencies": {
-    "@signalk/server-api": "^2.9.0",
+    "@signalk/server-api": "^2.10.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/geojson": "^7946.0.16",
     "@types/stream-json": "^1.7.8"

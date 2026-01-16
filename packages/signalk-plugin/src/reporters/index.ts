@@ -3,8 +3,9 @@ import { Config } from "../config.js";
 import { ServerAPI } from "@signalk/server-api";
 import { CronJob } from "cron";
 import { VesselInfo } from "../metadata.js";
-import { BathymetrySource } from "../types.js";
+import { BathymetrySource, Timeframe } from "../types.js";
 import { BATHY_URL, BATHY_DEFAULT_SCHEDULE } from "../constants.js";
+import type { Database } from "better-sqlite3";
 
 export * from "./noaa.js";
 
@@ -18,12 +19,14 @@ export function createReporter(
   config: Config,
   vessel: VesselInfo,
   source: BathymetrySource,
+  db: Database,
   { schedule = BATHY_DEFAULT_SCHEDULE, url = BATHY_URL }: ReporterOptions = {},
 ) {
+  const reportLog = createReportLogger(db);
   const job = new CronJob(schedule, report);
 
   async function report({
-    from = source.lastReport ?? new Date(0),
+    from = reportLog.lastReport ?? new Date(0),
     to = new Date(),
   } = {}) {
     app.debug(
@@ -38,27 +41,68 @@ export function createReporter(
       const submission = await submitGeoJSON(url, config, vessel, data);
       app.debug("Submission response: %j", submission);
       app.setPluginStatus(`Reported at ${to.toISOString()}`);
-      source.logReport?.({ from, to });
+      reportLog.logReport({ from, to });
     } catch (err) {
       console.error(err);
       app.error(`Failed to generate or submit report: ${err}`);
       app.setPluginStatus(
         `Failed to report at ${to.toISOString()}: ${(err as Error).message}`,
       );
-      return;
+      throw err;
     }
   }
 
-  return {
-    start() {
+  async function reportBackHistory() {
+    if (!source.getAvailableDates) return;
+
+    for (const date of await source.getAvailableDates()) {
+      const from = new Date(date);
+      const to = new Date(date);
+      to.setUTCDate(to.getUTCDate() + 1);
+
+      app.debug(
+        `Reporting back history date ${from.toISOString()} to ${to.toISOString()}`,
+      );
+      await report({ from, to });
+    }
+  }
+
+  async function start() {
+    if (reportLog.lastReport) {
       job.start();
       app.debug(`Reporting to %s with schedule: %s`, url, schedule);
       app.debug(`Next report at ${job.nextDate()}`);
       app.setPluginStatus(`Next report at ${job.nextDate()}`);
+    } else {
+      app.debug("No previous report found, reporting back history");
+      await reportBackHistory();
+      job.start();
+    }
+  }
+
+  function stop() {
+    app.debug(`Stopping reporter`);
+    job.stop();
+  }
+
+  return { start, stop };
+}
+
+export function createReportLogger(db: Database) {
+  const insert = db.prepare(
+    `INSERT INTO reports(fromTimestamp, toTimestamp) VALUES(?, ?)`,
+  );
+  const select = db.prepare<[], { toTimestamp: number }>(
+    `SELECT toTimestamp FROM reports ORDER BY toTimestamp DESC LIMIT 1`,
+  );
+
+  return {
+    logReport({ from, to }: Timeframe) {
+      insert.run(from.valueOf(), to.valueOf());
     },
-    stop() {
-      app.debug(`Stopping reporter`);
-      job.stop();
+    get lastReport() {
+      const row = select.get();
+      return row ? new Date(row.toTimestamp) : undefined;
     },
   };
 }
