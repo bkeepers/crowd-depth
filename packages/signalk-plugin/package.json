@@ -9,13 +9,13 @@
     "signalk-node-server-plugin",
     "signalk-category-cloud"
   ],
-  "homepage": "https://github.com/bkeepers/crowd-depth",
+  "homepage": "https://github.com/openwatersio/crowd-depth",
   "bugs": {
-    "url": "https://github.com/bkeepers/crowd-depth/issues"
+    "url": "https://github.com/openwatersio/crowd-depth/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bkeepers/crowd-depth.git"
+    "url": "git+https://github.com/openwatersio/crowd-depth.git"
   },
   "license": "ISC",
   "author": "Brandon Keepers",
