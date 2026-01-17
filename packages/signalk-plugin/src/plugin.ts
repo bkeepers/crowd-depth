@@ -1,15 +1,15 @@
 import { ServerAPI, Plugin } from "@signalk/server-api";
 import { schema, Config } from "./config.js";
-import { createCollector } from "./collector.js";
 import { createReporter } from "./reporters/index.js";
 import { createSqliteSource } from "./sources/sqlite.js";
-import { getVesselInfo } from "./metadata.js";
 import { NODE_ENV } from "./constants.js";
+import { createHistorySource } from "./sources/history.js";
+import { createDB } from "./storage.js";
+import { join } from "path";
+import { createCollector } from "./collector.js";
 
 export default function createPlugin(app: ServerAPI): Plugin {
-  // FIXME: types
-  let collector: ReturnType<typeof createCollector> | undefined = undefined;
-  let reporter: ReturnType<typeof createReporter> | undefined = undefined;
+  let abortController: AbortController | undefined = undefined;
 
   return {
     id: "crowd-depth",
@@ -18,23 +18,33 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
     async start(config: Config) {
       app.debug("Starting (NODE_ENV=%s)", NODE_ENV);
-      const vessel = await getVesselInfo(app);
-      const source = createSqliteSource(app);
 
-      collector = createCollector(app, config, source);
-      reporter = createReporter(app, config, vessel, source);
+      abortController = new AbortController();
+      const db = createDB(join(app.getDataDirPath(), `bathymetry.sqlite`));
+      const source =
+        (await createHistorySource(app, config)) ?? createSqliteSource(app, db);
 
-      collector.start().catch((err) => {
-        // TODO: what is the right behavior on collector error? Restart?
-        app.error("Collector failed");
-        app.error(err);
+      if (source.createWriter) {
+        createCollector({
+          app,
+          config,
+          writer: source.createWriter(),
+          signal: abortController.signal,
+        });
+      }
+
+      createReporter({
+        app,
+        config,
+        source,
+        db,
+        signal: abortController.signal,
       });
-
-      reporter.start();
     },
 
     stop() {
-      collector?.stop();
+      app.debug("Stopping");
+      abortController?.abort("Stopping crowd-depth plugin");
     },
 
     schema() {

@@ -1,123 +1,195 @@
 import { Config } from "../config.js";
-import cjsStreamJSON from "stream-json";
-import cjsPick from "stream-json/filters/Pick.js";
-import cjsStreamArray from "stream-json/streamers/StreamArray.js";
-import { chain } from "stream-chain";
 import { Readable } from "stream";
-import { BathymetrySource, Timeframe } from "../types.js";
-import { ServerAPI } from "@signalk/server-api";
+import { BathymetryData, BathymetrySource, Timeframe } from "../types.js";
+import { Path, ServerAPI } from "@signalk/server-api";
+import {
+  ContextsRequest,
+  ContextsResponse,
+  HistoryApi,
+  PathSpec,
+  PathsRequest,
+  PathsResponse,
+  ValuesRequest,
+  ValuesResponse,
+} from "@signalk/server-api/history";
+import { Temporal } from "@js-temporal/polyfill";
 
-// Workaround for stream-json ESM/CJS interop
-const { parser } = cjsStreamJSON;
-const { streamArray } = cjsStreamArray;
-const { pick } = cjsPick;
+const DEFAULT_HOST = process.env.SIGNALK_HOST ?? "http://localhost:3000/";
 
-const DEFAULT_HOST = process.env.SIGNALK_HOST ?? "http://localhost:3000";
-
-export function createHistorySource(
+export async function createHistorySource(
   app: ServerAPI,
   config: Config,
   options: HistorySourceOptions = {},
-): BathymetrySource {
-  const { host = DEFAULT_HOST } = options;
+): Promise<BathymetrySource | undefined> {
+  const history = await getHistoryAPI({ app, ...options });
 
-  return {
-    // History providers handle the recording of data themselves
-    createWriter: undefined,
+  if (!history) return;
 
-    createReader({ from, to }) {
-      return createHistoryReader({ from, to, host, depthPath: config.path });
-    },
-  };
-}
+  async function createReader({ from, to }: Timeframe) {
+    app.debug("Reading history from %s to %s", from, to);
+    const timerange = {
+      from: toTemporalInstant(from),
+      to: toTemporalInstant(to),
+    };
 
-export interface HistoryReaderOptions extends Timeframe {
-  host: string;
-  depthPath: string;
-  resolution?: string; // in seconds, defaults to "1"
-  context?: string;
-}
+    // @ts-expect-error: https://github.com/SignalK/signalk-server/pull/2264
+    const availablePaths = await history.getPaths(timerange);
 
-export async function createHistoryReader(options: HistoryReaderOptions) {
-  const {
-    from,
-    to,
-    host,
-    depthPath,
-    resolution = "1",
-    context = undefined,
-  } = options;
+    const pathSpecs: PathSpec[] = [
+      { path: "navigation.position" as Path, aggregate: "first" },
+      {
+        path: `environment.depth.${config.path}` as Path,
+        aggregate: "first",
+      },
+    ];
 
-  const stream = await get({
-    from: from.toISOString(),
-    to: to.toISOString(),
-    paths: [
-      "navigation.position",
-      `environment.depth.${depthPath}`,
-      "navigation.headingTrue",
-    ].join(","),
-    resolution,
-    context: context ?? "",
-  });
+    // API returns an error if you request a path that doesn't exist
+    // https://github.com/tkurki/signalk-to-influxdb2/issues/99
+    if (availablePaths.includes("navigation.headingTrue" as Path)) {
+      pathSpecs.push({
+        path: "navigation.headingTrue" as Path,
+        aggregate: "first",
+      });
+    }
 
-  return Readable.from(
-    chain([
-      stream,
-      ({ value }: { value: HistoryData }) => {
-        const [timestamp, position, depth, heading] = value;
+    // @ts-expect-error: https://github.com/SignalK/signalk-server/pull/2264
+    const res = await history.getValues({
+      ...timerange,
+      resolution: 1, // 1 second
+      pathSpecs,
+    });
 
-        if (depth !== null && position[0] !== null && position[1] !== null) {
+    const data = res.data
+      .map((row): BathymetryData | undefined => {
+        const [timestamp, [longitude, latitude], depth, heading] = row;
+
+        if (depth !== null && longitude !== null && latitude !== null) {
           return {
             timestamp: new Date(timestamp),
-            longitude: position?.[0],
-            latitude: position?.[1],
+            longitude,
+            latitude,
             depth,
             heading,
           };
         }
-      },
-    ]),
-  );
+      })
+      .filter(Boolean);
 
-  async function get(query: Record<string, string>) {
-    const url = new URL(`${host}/signalk/v1/history/values`);
-    url.search = new URLSearchParams(query).toString();
+    app.debug("Read %d bathymetry points from history", data.length);
 
-    const response = await fetch(url);
-
-    if (!response.ok || !response.body) {
-      throw new Error(`Failed to fetch history: ${response.statusText}`);
-    }
-
-    return chain([
-      response.body,
-      parser(),
-      pick({ filter: "data" }),
-      streamArray(),
-    ]);
+    return Readable.from(data);
   }
-}
 
-type HistoryData = [
-  /** timestamp */
-  string,
-  /** position */
-  [number | null, number | null],
-  (
-    /** depth */
-    number | null
-  ),
-  (
-    /** heading */
-    number | null
-  ),
-];
+  /**
+   * Get the list of dates that there is data for in the history.
+   *
+   * @param to - The end date of the range to get available dates for, defaults to now
+   * @param from - The start date of the range to get available dates for, defaults to `new Date(0)`
+   */
+  async function getAvailableDates({
+    to = new Date(),
+    from = new Date(0),
+  } = {}) {
+    // @ts-expect-error: https://github.com/SignalK/signalk-server/pull/2264
+    const res = await history.getValues({
+      from: toTemporalInstant(from),
+      to: toTemporalInstant(to),
+      resolution: 86400, // 1 day
+      pathSpecs: [
+        {
+          path: ("environment.depth." + config.path) as Path,
+          aggregate: "first",
+        },
+      ],
+    });
+
+    return res.data.map((row) => new Date(row[0]));
+  }
+
+  return {
+    // History providers handle the recording of data themselves
+    createWriter: undefined,
+    createReader,
+    getAvailableDates,
+  };
+}
 
 export interface HistorySourceOptions {
   host?: string;
 }
 
-export type HistoryStreamOptions = {
-  from: string;
-  to: string;
+export type HistoryAPIOptions = {
+  app: ServerAPI;
+  host?: string;
 };
+
+// URLSearchParams thinks it needs strings, but will work with anything that can be converted to a string.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type URLSearchParamsOptions = Record<string, any>;
+
+/**
+ * The History Provider API is new and may not be available. This uses a provider if available,
+ * and otherwise falls back to direct HTTP access if available.
+ */
+export async function getHistoryAPI({
+  app,
+  host = DEFAULT_HOST,
+}: HistoryAPIOptions): Promise<HistoryApi | undefined> {
+  const api = await app.getHistoryApi?.();
+
+  // Check if there is a built-in history provider
+  if (api) {
+    app.debug("Using built-in history provider");
+    return api;
+  }
+
+  async function get(path: string, params: URLSearchParamsOptions = {}) {
+    const url = new URL(path, new URL("/signalk/v1/history/", host));
+    url.search = new URLSearchParams(params).toString();
+
+    app.debug("Fetching %s", url.toString());
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(
+        `Failed to fetch ${url}: ${res.status} ${res.statusText}`,
+      );
+    }
+
+    return res.json();
+  }
+
+  function getValues({
+    pathSpecs,
+    ...query
+  }: ValuesRequest): Promise<ValuesResponse> {
+    return get("values", {
+      ...query,
+      paths: pathSpecs
+        .map(({ path, aggregate }) => [path, aggregate].join(":"))
+        .join(","),
+    });
+  }
+
+  function getContexts(query?: ContextsRequest): Promise<ContextsResponse> {
+    return get("contexts", query);
+  }
+
+  function getPaths(query?: PathsRequest): Promise<PathsResponse> {
+    return get("paths", query);
+  }
+
+  try {
+    await getContexts();
+    app.debug("Using History API available at %s", host);
+  } catch {
+    app.debug("History API is not available");
+    return;
+  }
+
+  return { getValues, getContexts, getPaths };
+}
+
+function toTemporalInstant(date: Date): Temporal.Instant {
+  return Temporal.Instant.fromEpochMilliseconds(date.getTime());
+}

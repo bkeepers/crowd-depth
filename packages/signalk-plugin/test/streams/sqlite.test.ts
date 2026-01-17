@@ -3,6 +3,7 @@ import { createSqliteSource } from "../../src/sources/sqlite.js";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { app } from "../helper.js";
+import { createDB } from "../../src/storage.js";
 
 const data = [
   {
@@ -30,7 +31,7 @@ const data = [
 ];
 
 test("reading and writing to sqlite", async () => {
-  const source = createSqliteSource(app);
+  const source = createSqliteSource(app, createDB(":memory:"));
   const writer = source.createWriter!();
   await pipeline(Readable.from(data), writer);
 
@@ -46,7 +47,7 @@ test("reading and writing to sqlite", async () => {
 });
 
 test("reading with from and to", async () => {
-  const source = createSqliteSource(app);
+  const source = createSqliteSource(app, createDB(":memory:"));
   const writer = source.createWriter!();
   await pipeline(Readable.from(data), writer);
 
@@ -58,14 +59,4 @@ test("reading with from and to", async () => {
   const result = await reader.toArray();
   expect(result.length).toBe(1);
   expect(result[0].timestamp).toEqual(data[1].timestamp);
-});
-
-test("logReport", async () => {
-  const source = createSqliteSource(app);
-  const from = new Date("2025-08-06T22:00:00.000Z");
-  const to = new Date("2025-08-06T23:00:00.000Z");
-
-  expect(source.lastReport).toBeUndefined();
-  source.logReport!({ from, to });
-  expect(source.lastReport).toEqual(to);
 });
