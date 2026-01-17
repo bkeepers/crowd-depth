@@ -2,7 +2,7 @@ import { submitGeoJSON } from "./noaa.js";
 import { Config } from "../config.js";
 import { ServerAPI } from "@signalk/server-api";
 import { CronJob } from "cron";
-import { VesselInfo } from "../metadata.js";
+import { getVesselInfo } from "../metadata.js";
 import { BathymetrySource, Timeframe } from "../types.js";
 import { BATHY_URL, BATHY_DEFAULT_SCHEDULE } from "../constants.js";
 import type { Database } from "better-sqlite3";
@@ -10,20 +10,27 @@ import type { Database } from "better-sqlite3";
 export * from "./noaa.js";
 
 export interface ReporterOptions {
+  app: ServerAPI;
+  config: Config;
+  source: BathymetrySource;
+  db: Database;
+  signal: AbortSignal;
   schedule?: string; // cron schedule string
   url?: string; // URL of service
 }
 
-export function createReporter(
-  app: ServerAPI,
-  config: Config,
-  vessel: VesselInfo,
-  source: BathymetrySource,
-  db: Database,
-  { schedule = BATHY_DEFAULT_SCHEDULE, url = BATHY_URL }: ReporterOptions = {},
-) {
+export function createReporter({
+  app,
+  config,
+  source,
+  db,
+  signal,
+  schedule = BATHY_DEFAULT_SCHEDULE,
+  url = BATHY_URL,
+}: ReporterOptions) {
   const reportLog = createReportLogger(db);
   const job = new CronJob(schedule, report);
+  signal.addEventListener("abort", stop, { once: true });
 
   async function report({
     from = reportLog.lastReport ?? new Date(0),
@@ -34,6 +41,7 @@ export function createReporter(
     );
     try {
       const data = await source.createReader({ from, to });
+      const vessel = await getVesselInfo(app);
       app.debug(
         `Reporting data from ${vessel.name} (${vessel.mmsi}) to ${url}`,
       );
@@ -67,25 +75,22 @@ export function createReporter(
     }
   }
 
-  async function start() {
-    if (reportLog.lastReport) {
-      job.start();
-      app.debug(`Reporting to %s with schedule: %s`, url, schedule);
-      app.debug(`Next report at ${job.nextDate()}`);
-      app.setPluginStatus(`Next report at ${job.nextDate()}`);
-    } else {
-      app.debug("No previous report found, reporting back history");
-      await reportBackHistory();
-      job.start();
-    }
-  }
-
   function stop() {
     app.debug(`Stopping reporter`);
     job.stop();
   }
 
-  return { start, stop };
+  if (reportLog.lastReport) {
+    job.start();
+    app.debug(`Reporting to %s with schedule: %s`, url, schedule);
+    app.debug(
+      `Last report at ${reportLog.lastReport.toISOString()}, next report at ${job.nextDate()}`,
+    );
+    app.setPluginStatus(`Next report at ${job.nextDate()}`);
+  } else {
+    app.debug("No previous report found, reporting back history");
+    reportBackHistory().then(() => job.start());
+  }
 }
 
 export function createReportLogger(db: Database) {
