@@ -27,15 +27,17 @@ export async function createHistorySource(
     const req: ValuesRequest = {
       from: toTemporalInstant(from),
       to: toTemporalInstant(to),
+      resolution: 1, // 1 second,
       pathSpecs: [
         { path: "navigation.position" as Path, aggregate: "first" },
         {
           path: `environment.depth.${config.path}` as Path,
-          aggregate: "first",
+          // signalk-to-influxdb returns null when requesting `first`, so using `min` instead
+          aggregate: "min",
         },
         {
           path: "navigation.headingTrue" as Path,
-          aggregate: "first",
+          aggregate: "average",
         },
       ],
     };
@@ -91,7 +93,8 @@ export async function createHistorySource(
       pathSpecs: [
         {
           path: ("environment.depth." + config.path) as Path,
-          aggregate: "first",
+          // signalk-to-influxdb returns null when requesting `first`, so using `min` instead
+          aggregate: "min",
         },
       ],
     });
