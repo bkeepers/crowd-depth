@@ -142,7 +142,10 @@ export async function getHistoryAPI({
   }
 
   try {
-    await getContexts();
+    await getContexts({
+      from: Temporal.Instant.fromEpochMilliseconds(0),
+      to: Temporal.Now.instant(),
+    });
     app.debug("Using History API available at %s", host);
   } catch {
     app.debug("History API is not available");
