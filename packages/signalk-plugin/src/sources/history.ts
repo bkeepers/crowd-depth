@@ -108,6 +108,7 @@ export async function createHistorySource(
 }
 
 export interface HistorySourceOptions {
+  port?: number;
   host?: string;
 }
 
@@ -126,7 +127,9 @@ type URLSearchParamsOptions = Record<string, any>;
  */
 export async function getHistoryAPI({
   app,
-  host = process.env.SIGNALK_HOST ?? "http://localhost:3000/",
+  // @ts-expect-error: app.config is not a public API
+  port = Number(process.env.PORT) || app.config?.settings?.port || 3000,
+  host = process.env.SIGNALK_HOST ?? `http://localhost:${port}/`,
 }: HistoryAPIOptions): Promise<HistoryApi | undefined> {
   try {
     // Try to get the built-in history provider API first. It either returns the API or throws
