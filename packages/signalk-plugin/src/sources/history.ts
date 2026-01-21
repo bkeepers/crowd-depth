@@ -73,6 +73,8 @@ export async function createHistorySource(
 
     app.debug("Read %d bathymetry points from history", data.length);
 
+    if (data.length === 0) return;
+
     return Readable.from(data);
   }
 
@@ -99,7 +101,8 @@ export async function createHistorySource(
       ],
     });
 
-    return res.data.map((row) => new Date(row[0]));
+    // Get days with depth data
+    return res.data.filter(([, v]) => v).map(([t]) => new Date(t));
   }
 
   return {
