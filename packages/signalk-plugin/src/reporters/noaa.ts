@@ -10,6 +10,7 @@ import {
 } from "../streams/index.js";
 import chain from "stream-chain";
 import createDebug from "debug";
+import fetch from "../fetch.js";
 
 const debug = createDebug("crowd-depth:noaa");
 
