@@ -61,7 +61,11 @@ export async function createHistorySource(
         const [timestamp, position, depth, heading] = row;
         const [latitude, longitude] = position || [];
 
-        if (depth !== null && longitude !== null && latitude !== null) {
+        if (
+          Number.isFinite(depth) &&
+          Number.isFinite(longitude) &&
+          Number.isFinite(latitude)
+        ) {
           return {
             timestamp: Temporal.Instant.from(timestamp),
             longitude,
@@ -106,7 +110,7 @@ export async function createHistorySource(
 
     // Get days with depth data
     return res.data
-      .filter(([, v]) => v)
+      .filter(([, v]) => Number.isFinite(v))
       .map((row) => Temporal.Instant.from(row[0]));
   }
 
