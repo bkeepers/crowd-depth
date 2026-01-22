@@ -91,7 +91,8 @@ export function createReporter({
   if (
     reportLog.lastReport &&
     // Last report was within 24 hours
-    reportLog.lastReport > Temporal.Now.instant().subtract({ hours: 24 })
+    reportLog.lastReport.epochMilliseconds >
+      Temporal.Now.instant().subtract({ hours: 24 }).epochMilliseconds
   ) {
     job.start();
     app.debug(`Reporting to %s with schedule: %s`, url, schedule);
