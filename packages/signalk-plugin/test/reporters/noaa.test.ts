@@ -46,7 +46,10 @@ const data: BathymetryData[] = [
 
 describe("submitGeoJSON", () => {
   test("success", async () => {
-    const scope = nock(BATHY_URL).post("/geojson").reply(200, SUCCESS_RESPONSE);
+    const scope = nock(BATHY_URL)
+      .post("/geojson")
+      .matchHeader("user-agent", /^crowd-depth/)
+      .reply(200, SUCCESS_RESPONSE);
     const res = await submitGeoJSON(
       BATHY_URL,
       config,

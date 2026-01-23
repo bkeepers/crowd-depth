@@ -13,6 +13,7 @@ import {
 } from "@signalk/server-api/history";
 import { Temporal } from "@js-temporal/polyfill";
 import { BATHY_EPOCH } from "../constants.js";
+import fetch from "../fetch.js";
 
 export async function createHistorySource(
   app: ServerAPI,
