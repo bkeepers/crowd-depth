@@ -27,7 +27,7 @@
     "express": "^4.21.2",
     "express-async-handler": "^1.2.0",
     "jsonwebtoken": "^9.0.2",
-    "pino": "^9.6.0",
+    "pino": "^10.2.1",
     "pino-http": "^11.0.0",
     "uuid": "^13.0.0"
   }
