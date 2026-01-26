@@ -11,6 +11,7 @@ import { unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createS3Storage, S3Config } from "./s3.js";
+import semver from "semver";
 import { pipeline } from "stream/promises";
 import asyncHandler from "express-async-handler";
 import { getLogger } from "./logger.js";
@@ -30,6 +31,8 @@ const {
   NOAA_CSB_URL = "https://www.ngdc.noaa.gov/ingest-external/upload/csb/test/",
   NOAA_CSB_TOKEN = "test",
 } = process.env;
+
+export const MIN_CLIENT_VERSION = "1.0.1";
 
 export type APIOptions = {
   url?: string;
@@ -70,6 +73,7 @@ export function registerWithRouter(router: IRouter, options: APIOptions = {}) {
   router.post(
     "/geojson",
     verifyIdentity,
+    verifyClientVersion,
     asyncHandler(async (req, res) => {
       let metadata: MultipartMetadata;
       let data: Readable;
@@ -230,6 +234,39 @@ export function verifyIdentity(
     }
     next(); // Proceed to the next middleware or route handler
   });
+}
+
+export function verifyClientVersion(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  logger.trace("Verifying client version for request to %s", req.path);
+  const ua = req.headers["user-agent"];
+
+  // Expect format: crowd-depth/<version> (...)
+  const [, clientVersion] = ua?.match(/^crowd-depth\/([^\s]+)(\s|$)/) || [];
+  if (!semver.valid(clientVersion)) {
+    logger.warn("Missing or invalid User-Agent: %s", ua);
+    return res
+      .status(400)
+      .json({ success: false, message: "Missing or invalid User-Agent" });
+  }
+
+  if (semver.lt(clientVersion, MIN_CLIENT_VERSION)) {
+    logger.warn(
+      "Client version %s below minimum %s",
+      clientVersion,
+      MIN_CLIENT_VERSION,
+    );
+    return res.status(426).json({
+      success: false,
+      message: "Client version too old",
+      minVersion: MIN_CLIENT_VERSION,
+    });
+  }
+
+  next();
 }
 
 export function createIdentity(uuid = uuidv4()) {
