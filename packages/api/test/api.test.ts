@@ -2,7 +2,12 @@ import { describe, test, expect, beforeAll } from "vitest";
 import request from "supertest";
 import express from "express";
 import nock from "nock";
-import { createApi, createIdentity, type APIOptions } from "../src/api.js";
+import {
+  createApi,
+  createIdentity,
+  MIN_CLIENT_VERSION,
+  type APIOptions,
+} from "../src/api.js";
 import { toUniqueID } from "crowd-depth";
 import { vessel } from "../../signalk-plugin/test/helper.js";
 
@@ -27,6 +32,74 @@ function useApp(options: APIOptions = {}) {
 }
 
 describe("POST /geojson", () => {
+  describe("client version validation", () => {
+    test("rejects requests without User-Agent", async () => {
+      await useApp()
+        .post("/geojson")
+        .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+        .expect(400)
+        .expect({ success: false, message: "Missing or invalid User-Agent" });
+    });
+
+    test("rejects requests with invalid User-Agent format", async () => {
+      await useApp()
+        .post("/geojson")
+        .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+        .set("User-Agent", "SomeOtherClient/1.0.0")
+        .expect(400)
+        .expect({ success: false, message: "Missing or invalid User-Agent" });
+    });
+
+    test("rejects requests with unparseable version", async () => {
+      await useApp()
+        .post("/geojson")
+        .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+        .set("User-Agent", "crowd-depth/not-a-version (https://github.com)")
+        .expect(400)
+        .expect({ success: false, message: "Missing or invalid User-Agent" });
+    });
+
+    test("rejects requests with version below minimum (1.0.0)", async () => {
+      await useApp()
+        .post("/geojson")
+        .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+        .set(
+          "User-Agent",
+          "crowd-depth/1.0.0 (https://github.com/openwatersio/crowd-depth)",
+        )
+        .expect(426)
+        .expect({
+          success: false,
+          message: "Client version too old",
+          minVersion: MIN_CLIENT_VERSION,
+        });
+    });
+
+    test("accepts requests with minimum version", async () => {
+      await useApp()
+        .post("/geojson")
+        .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+        .set(
+          "User-Agent",
+          `crowd-depth/${MIN_CLIENT_VERSION} (https://github.com/openwatersio/crowd-depth)`,
+        )
+        .expect(400) // Will fail at the next validation step (missing data)
+        .expect({ success: false, message: "Missing Content-Type" });
+    });
+
+    test("accepts requests with version above minimum", async () => {
+      await useApp()
+        .post("/geojson")
+        .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+        .set(
+          "User-Agent",
+          "crowd-depth/2000.0.0 (https://github.com/openwatersio/crowd-depth)",
+        )
+        .expect(400) // Will fail at the next validation step (missing data)
+        .expect({ success: false, message: "Missing Content-Type" });
+    });
+  });
+
   test("rejects requests without token", async () => {
     await useApp()
       .post("/geojson")
@@ -54,6 +127,10 @@ describe("POST /geojson", () => {
     await useApp()
       .post("/geojson")
       .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+      .set(
+        "User-Agent",
+        `crowd-depth/${MIN_CLIENT_VERSION} (https://github.com/openwatersio/crowd-depth)`,
+      )
       .expect(400)
       .expect({ success: false, message: "Missing Content-Type" });
   });
@@ -65,6 +142,10 @@ describe("POST /geojson", () => {
     await useApp()
       .post("/geojson")
       .set("Authorization", `Bearer ${token}`)
+      .set(
+        "User-Agent",
+        `crowd-depth/${MIN_CLIENT_VERSION} (https://github.com/openwatersio/crowd-depth)`,
+      )
       .field("metadataInput", JSON.stringify({ uniqueID }), {
         filename: "test.json",
         contentType: "application/json",
@@ -89,6 +170,10 @@ describe("POST /geojson", () => {
     await useApp()
       .post("/geojson")
       .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+      .set(
+        "User-Agent",
+        `crowd-depth/${MIN_CLIENT_VERSION} (https://github.com/openwatersio/crowd-depth)`,
+      )
       .field("metadataInput", JSON.stringify({ uniqueID }), {
         filename: "test.json",
         contentType: "application/json",
@@ -131,6 +216,10 @@ describe("POST /geojson", () => {
     await useApp({ env })
       .post("/geojson")
       .set("Authorization", `Bearer ${createIdentity(vessel.uuid).token}`)
+      .set(
+        "User-Agent",
+        `crowd-depth/${MIN_CLIENT_VERSION} (https://github.com/openwatersio/crowd-depth)`,
+      )
       .field("metadataInput", JSON.stringify({ uniqueID }), {
         filename: "test.json",
         contentType: "application/json",
